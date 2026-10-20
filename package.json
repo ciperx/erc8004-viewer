@@ -1,0 +1,8 @@
+{
+  "name": "@ciperx/siws-solana",
+  "version": "1.0.0",
+  "type": "module",
+  "private": true,
+  "description": "Sign in with Solana: message format, ed25519 verification, replay guard, allowlist",
+  "scripts": { "test": "node --test test/*.test.js" }
+}
