@@ -1,0 +1,8 @@
+{
+  "name": "@ciperx/erc8004-viewer",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Static page and ES module that read an ERC-8004 agent identity and reputation on Base and Base Sepolia",
+  "scripts": { "test": "node --test test/*.test.js" }
+}

@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ERC-8004 identity viewer</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #ffffff;
+    --panel: #f6f7f9;
+    --text: #14161a;
+    --muted: #5d6470;
+    --line: #dfe3e8;
+    --accent: #1f6feb;
+    --ok: #1a7f37;
+    --bad: #b42318;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f1115;
+      --panel: #161a20;
+      --text: #e8eaee;
+      --muted: #9aa3af;
+      --line: #262b33;
+      --accent: #6ea8ff;
+      --ok: #4ade80;
+      --bad: #f87171;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font: 16px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    padding: 16px;
+  }
+  main { max-width: 720px; margin: 0 auto; }
+  h1 { font-size: 1.35rem; margin: 0 0 4px; letter-spacing: -0.01em; }
+  p.lede { color: var(--muted); margin: 0 0 16px; font-size: 0.95rem; }
+  form {
+    display: grid;
+    gap: 10px;
+    grid-template-columns: 1fr;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 14px;
+  }
+  label { font-size: 0.85rem; color: var(--muted); display: block; margin-bottom: 4px; }
+  input, select, button {
+    width: 100%;
+    font: inherit;
+    padding: 10px 12px;
+    border-radius: 8px;
+    border: 1px solid var(--line);
+    background: var(--bg);
+    color: var(--text);
+  }
+  button { background: var(--accent); color: #fff; border: 0; font-weight: 600; cursor: pointer; }
+  button:disabled { opacity: 0.6; cursor: progress; }
+  section.card {
+    margin-top: 16px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 14px;
+    overflow-wrap: anywhere;
+  }
+  section.card h2 { font-size: 0.95rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); margin: 0 0 8px; }
+  dl { margin: 0; display: grid; grid-template-columns: 1fr; gap: 6px; }
+  dt { font-size: 0.78rem; color: var(--muted); }
+  dd { margin: 0 0 6px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.85rem; }
+  .pill { display: inline-block; font-size: 0.75rem; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); }
+  .ok { color: var(--ok); }
+  .bad { color: var(--bad); }
+  ul.items { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+  ul.items li { border-top: 1px solid var(--line); padding-top: 8px; }
+  ul.items li:first-child { border-top: 0; padding-top: 0; }
+  .score { font-weight: 700; }
+  img.avatar { max-width: 96px; border-radius: 10px; border: 1px solid var(--line); display: block; margin-bottom: 8px; }
+  #state { margin-top: 12px; font-size: 0.9rem; }
+  @media (min-width: 560px) {
+    form { grid-template-columns: 1fr 1fr; }
+    form .wide { grid-column: 1 / -1; }
+    dl { grid-template-columns: 150px 1fr; }
+    dt { margin-top: 2px; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <h1>ERC-8004 identity</h1>
+  <p class="lede">Read an agent's owner, its registration file and its reputation, straight from the registry. Base and Base Sepolia.</p>
+
+  <form id="lookup">
+    <div>
+      <label for="agentId">Agent id</label>
+      <input id="agentId" name="agentId" inputmode="numeric" placeholder="0" autocomplete="off" required>
+    </div>
+    <div>
+      <label for="network">Network</label>
+      <select id="network" name="network">
+        <option value="base">Base</option>
+        <option value="base-sepolia">Base Sepolia</option>
+      </select>
+    </div>
+    <div class="wide">
+      <button id="go" type="submit">Read identity</button>
+    </div>
+  </form>
+
+  <div id="state" role="status" aria-live="polite"></div>
+  <div id="result"></div>
+</main>
+
+<script type="module">
+import { loadAgent } from "./viewer.js";
+import { REGISTRIES, RPCS } from "./config.js";
+
+const state = document.querySelector("#state");
+const result = document.querySelector("#result");
+const go = document.querySelector("#go");
+
+const show = (node) => { result.replaceChildren(node); };
+const el = (tag, props = {}, text) => {
+  const node = document.createElement(tag);
+  Object.assign(node, props);
+  if (text !== undefined) node.textContent = text;
+  return node;
+};
+const row = (term, value) => {
+  const dl = document.createDocumentFragment();
+  dl.append(el("dt", {}, term), el("dd", {}, value === undefined || value === null || value === "" ? "not set" : String(value)));
+  return dl;
+};
+const card = (title, children) => {
+  const section = el("section", { className: "card" });
+  section.append(el("h2", {}, title), ...children);
+  return section;
+};
+
+function renderIdentity(agent) {
+  const dl = el("dl");
+  dl.append(row("status", agent.status));
+  dl.append(row("agent id", agent.agentId));
+  dl.append(row("network", agent.network));
+  dl.append(row("owner", agent.owner));
+  dl.append(row("tokenURI", agent.tokenURI));
+  return card("Identity", [dl]);
+}
+
+function renderRegistration(registration) {
+  if (!registration) return card("Registration", [el("p", { className: "bad" }, "no registration file")]);
+  const children = [];
+  if (registration.image && /^https?:|^data:/.test(registration.image)) {
+    children.push(el("img", { className: "avatar", src: registration.image, alt: registration.name ? `${registration.name} image` : "agent image" }));
+  }
+  const dl = el("dl");
+  dl.append(row("name", registration.name));
+  dl.append(row("description", registration.description));
+  if (registration.image) dl.append(row("image", registration.image));
+  const trust = registration.supportedTrust || registration.supported_trust;
+  if (Array.isArray(trust)) dl.append(row("supported trust", trust.join(", ")));
+  children.push(dl);
+
+  const endpoints = registration.endpoints || [];
+  if (Array.isArray(endpoints) && endpoints.length) {
+    const list = el("ul", { className: "items" });
+    for (const endpoint of endpoints) {
+      const item = el("li");
+      item.append(el("div", { className: "score" }, String(endpoint.name || "endpoint")));
+      const link = el("a", { href: String(endpoint.url || "#"), rel: "noreferrer noopener", target: "_blank" }, String(endpoint.url || ""));
+      item.append(link);
+      if (endpoint.description) item.append(el("div", {}, String(endpoint.description)));
+      list.append(item);
+    }
+    children.push(el("h2", {}, "Endpoints"), list);
+  }
+  return card("Registration", children);
+}
+
+function renderFeedback(feedback) {
+  const children = [];
+  const dl = el("dl");
+  dl.append(row("count", feedback.count));
+  dl.append(row("average", feedback.average));
+  children.push(dl);
+  if (!feedback.count) {
+    children.push(el("p", { className: "pill" }, "no feedback yet"));
+  } else {
+    const list = el("ul", { className: "items" });
+    for (const item of feedback.items.slice(0, 10)) {
+      const li = el("li");
+      li.append(el("div", { className: "score" }, String(item.score)));
+      li.append(el("div", {}, item.client));
+      if (item.tags && item.tags.length) li.append(el("div", { className: "pill" }, item.tags.join(" · ")));
+      list.append(li);
+    }
+    children.push(list);
+  }
+  return card("Reputation", children);
+}
+
+async function rpc(method, params) {
+  const response = await fetch(RPCS[document.querySelector("#network").value], {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
+  });
+  const body = await response.json();
+  if (body.error) throw Object.assign(new Error(body.error.message), { code: body.error.code });
+  return body.result;
+}
+
+async function fetchJson(url) {
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`${response.status} ${response.statusText}`);
+  return response.json();
+}
+
+document.querySelector("#lookup").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const agentId = document.querySelector("#agentId").value.trim();
+  const network = document.querySelector("#network").value;
+  go.disabled = true;
+  state.className = "";
+  state.textContent = `reading agent ${agentId} on ${network}`;
+  result.replaceChildren();
+  try {
+    const agent = await loadAgent({ agentId, network, identityRegistry: REGISTRIES[network].identity, reputationRegistry: REGISTRIES[network].reputation, rpc, fetchJson });
+    if (agent.status === "empty") {
+      state.className = "bad";
+      state.textContent = agent.error || `no agent ${agentId} on ${network}`;
+      show(renderIdentity(agent));
+    } else if (agent.status === "error") {
+      state.className = "bad";
+      state.textContent = agent.error || "the read failed";
+      show(renderIdentity(agent));
+    } else {
+      state.className = "ok";
+      state.textContent = `agent ${agentId} on ${network}`;
+      show(document.createDocumentFragment());
+      result.append(renderIdentity(agent), renderRegistration(agent.registration), renderFeedback(agent.feedback));
+    }
+  } catch (error) {
+    state.className = "bad";
+    state.textContent = error.message || "unexpected failure";
+  } finally {
+    go.disabled = false;
+  }
+});
+</script>
+</body>
+</html>
